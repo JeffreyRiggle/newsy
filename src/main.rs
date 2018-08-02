@@ -86,49 +86,64 @@ struct CommitParent {
 }
 
 fn main() {
-    rt::run(get_commits());
+    rt::run(GitClient::get_commits());
 }
 
-fn get_commits() -> impl Future<Item=(), Error=()> {
-    make_request("GET", "https://api.github.com/repos/JeffreyRiggle/textadventurelib/commits")
-    .map(|commits| {
-        for commit in commits {
-            println!("Found Commit by {}", commit.author.login.unwrap());
-        }
-        println!("\n\nDone.");
-    })
-    .map_err(|err| {
-        eprintln!("Error {}", err);
-    })
+pub struct GitClient {
+
 }
 
-fn make_request(method: &str, url: &str) -> impl Future<Item = Vec<Commit>, Error = hyper::Error> {
-    let client = create_client();
+impl GitClient {
+    fn get_commits() -> impl Future<Item=(), Error=()> {
+        HttpClient::make_request::<Vec<Commit>>("GET", "https://api.github.com/repos/JeffreyRiggle/textadventurelib/commits")
+        .map(move |commits| {
+            for commit in commits {
+                println!("Found Commit by {}", commit.author.login.unwrap());
+            }
+            println!("\n\nDone.");
+        })
+        .map_err(|err| {
+            eprintln!("Error {}", err);
+        })
+    }
+}
+
+pub struct HttpClient {
+
+}
+
+impl HttpClient {
+    fn make_request<T>(method: &str, url: &str) -> impl Future<Item = T, Error = hyper::Error>
+    where 
+        T: serde::de::DeserializeOwned, 
+    {
+        let client = HttpClient::create_client();
+        
+        let req = HttpClient::build_request(method, url);
     
-    let req = build_request(method, url);
+        client.request(req)
+              .and_then(|res| {
+                  println!("Got response: {}", res.status());
+                  res.into_body().concat2()
+               })
+               .and_then(move |body| {
+                   let s = String::from_utf8(body.to_vec()).unwrap();
+                   let ds = serde_json::from_str(&s).unwrap();
+                   Ok(ds)
+               })
+    }
 
-    client.request(req)
-          .and_then(|res| {
-            println!("Got response: {}", res.status());
-            res.into_body().concat2()
-           })
-           .and_then(|body| {
-               let s = ::std::str::from_utf8(&body).unwrap();
-               let ds: Vec<Commit> = serde_json::from_str(&s).unwrap();
-               Ok(ds)
-           })
-}
+    fn create_client() -> hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>, hyper::Body> {
+        let https = HttpsConnector::new(4).expect("TLS initialization failed");
+        Client::builder().build::<_, hyper::Body>(https)
+    }
 
-fn create_client() -> hyper::Client<hyper_tls::HttpsConnector<hyper::client::HttpConnector>, hyper::Body> {
-    let https = HttpsConnector::new(4).expect("TLS initialization failed");
-    Client::builder().build::<_, hyper::Body>(https)
-}
-
-fn build_request(method: &str, url: &str) -> hyper::Request<hyper::Body> {
-    Request::builder()
-        .method(method)
-        .uri(url)
-        .header("user-agent", "newsy")
-        .body(Body::empty())
-        .unwrap()
+    fn build_request(method: &str, url: &str) -> hyper::Request<hyper::Body> {
+        Request::builder()
+            .method(method)
+            .uri(url)
+            .header("user-agent", "newsy")
+            .body(Body::empty())
+            .unwrap()
+    }
 }

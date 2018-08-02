@@ -3,6 +3,12 @@ name = "newsy"
 version = "0.1.0"
 authors = ["JeffreyRiggle <JeffreyRiggle@gmail.com>"]
 
+include = [
+    "Cargo.toml",
+    "LICENSE",
+    "src/**/**"
+]
+
 [dependencies]
 hyper = "^0.12"
 hyper-tls = "^0.3.0"
