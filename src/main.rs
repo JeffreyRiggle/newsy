@@ -7,8 +7,11 @@ extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
 extern crate futures;
+extern crate base64;
+extern crate regex;
 
 use hyper::rt::{self, Future};
+use regex::Regex;
 pub use self::httpclient::HttpClient;
 mod httpclient;
 
@@ -84,6 +87,32 @@ struct CommitParent {
     sha: Option<String>
 }
 
+#[derive(Serialize, Deserialize)]
+struct GitTreeFull {
+    sha: Option<String>,
+    url: Option<String>,
+    tree: Vec<GitTreeItem>
+}
+
+#[derive(Serialize, Deserialize)]
+struct GitTreeItem {
+    path: Option<String>,
+    mode: Option<String>,
+    sha: Option<String>,
+    size: Option<i32>,
+    url: Option<String>
+}
+
+#[derive(Serialize, Deserialize)]
+struct GitBlob {
+    sha: Option<String>,
+    node_id: Option<String>,
+    size: Option<i32>,
+    url: Option<String>,
+    content: Option<String>,
+    encoding: Option<String>
+}
+
 fn main() {
     rt::run(GitClient::get_commits());
 }
@@ -96,13 +125,71 @@ impl GitClient {
     fn get_commits() -> impl Future<Item=(), Error=()> {
         HttpClient::make_request::<Vec<Commit>>("GET", "https://api.github.com/repos/JeffreyRiggle/textadventurelib/commits")
         .map(move |commits| {
-            for commit in commits {
-                println!("Found Commit by {}", commit.author.login.unwrap());
-            }
-            println!("\n\nDone.");
+            GitClient::find_commits_in_release(commits);
         })
         .map_err(|err| {
             eprintln!("Error {}", err);
         })
+    }
+
+    fn find_commits_in_release(commits: Vec<Commit>) {
+        let mut index = 0;
+        let mut release_changed = false;
+        
+        for commit in commits {
+            rt::run(HttpClient::make_request::<GitTreeFull>("GET", &commit.commit.tree.url.unwrap())
+            .map(move |tree| {
+                for item in tree.tree {
+                    if GitClient::determine_if_release_change(item) {
+                        println!("The release changed in this commit");
+                        release_changed = true;
+                        break;
+                    }
+                }
+            }).map_err(|err| {
+                eprintln!("Error {}", err);
+            }));
+
+            if release_changed {
+                break;
+            }
+
+            index = index + 1;
+        }
+
+        if release_changed {
+            println!("Release changed at index {}", index);
+        }
+    }
+
+    fn determine_if_release_change(item: GitTreeItem) -> bool {
+        let mut ret_val = false;
+        let file = item.path.unwrap();
+        let release_reg = Regex::new(r"1.3.0-SNAPSHOT").unwrap();
+        
+        if file != "pom.xml" {
+            return false;
+        }
+
+        rt::run(HttpClient::make_request::<GitBlob>("GET", &item.url.unwrap())
+        .map(move |blob| {
+            let b_content = &blob.content.unwrap();
+            
+            println!("Found content {}", b_content);
+            
+            let content = base64::decode_config(&b_content, base64::URL_SAFE).unwrap();
+            let content_string = String::from_utf8(content).unwrap();
+            
+            println!("Regex test {}", release_reg.is_match(&content_string));
+
+            if content_string.contains("<version>1.3.0-SNAPSHOT</version>") {
+                ret_val = true;
+            }
+        })
+        .map_err(|err| {
+            eprintln!("Error {}", err);
+        }));
+
+        return ret_val;
     }
 }
