@@ -108,6 +108,7 @@ struct GitBlob {
     encoding: Option<String>
 }
 
+#[derive(Clone)]
 pub struct GitClient {
     pub owner: String,
     pub repo: String,
@@ -115,26 +116,36 @@ pub struct GitClient {
     pub release_pattern: String
 }
 
+pub struct Change {
+    pub message: String,
+    pub author: String,
+    pub changeType: String
+}
+
 impl GitClient {
-    pub fn get_commits(self) -> impl Future<Item=(), Error=()> {
-        HttpClient::make_request::<Vec<Commit>>("GET", &format!("https://api.github.com/repos/{}/{}/commits", self.owner, self.repo))
-        .map(move |commits| {
-            self.find_commits_in_release(commits);
+    pub fn get_commits_in_release(&self) -> impl Future<Item=Vec<Change>, Error=()> {
+        HttpClient::make_request_with_context::<Vec<Commit>, GitClient>("GET", &format!("https://api.github.com/repos/{}/{}/commits", self.owner, self.repo), self.clone())
+        .map(|res| {
+            let (commits, s) = res;
+            s.find_commits_in_release(commits)
         })
         .map_err(|err| {
             eprintln!("Error {}", err);
         })
     }
 
-    fn find_commits_in_release(self, commits: Vec<Commit>) {
+    fn find_commits_in_release(&self, commits: Vec<Commit>) -> Vec<Change> {
         let mut index = 0;
         let mut release_changed = false;
+        let mut ret_val: Vec<Change> = Vec::new();
         
         for commit in commits {
-            rt::run(HttpClient::make_request::<GitTreeFull>("GET", &commit.commit.tree.url.unwrap())
-            .map(move |tree| {
+            rt::run(HttpClient::make_request_with_context::<GitTreeFull, GitClient>("GET", &commit.commit.tree.url.unwrap(), self.clone())
+            .map(move |res| {
+                let (tree, s) = res;
+
                 for item in tree.tree {
-                    if GitClient::determine_if_release_change(item) {
+                    if s.determine_if_release_change(item) {
                         println!("The release changed in this commit");
                         release_changed = true;
                         break;
@@ -143,6 +154,14 @@ impl GitClient {
             }).map_err(|err| {
                 eprintln!("Error {}", err);
             }));
+
+            let mut c = Change {
+                message: commit.commit.message.unwrap(),
+                author: commit.commit.author.name.unwrap(),
+                changeType: "Commit".to_string()
+            };
+
+            ret_val.push(c);
 
             if release_changed {
                 break;
@@ -154,14 +173,16 @@ impl GitClient {
         if release_changed {
             println!("Release changed at index {}", index);
         }
+
+        return ret_val;
     }
 
-    fn determine_if_release_change(item: GitTreeItem) -> bool {
+    fn determine_if_release_change(&self, item: GitTreeItem) -> bool {
         let mut ret_val = false;
         let file = item.path.unwrap();
-        let release_reg = Regex::new(r"1.3.0-SNAPSHOT").unwrap();
+        let release_reg = Regex::new(&self.release_pattern).unwrap();
         
-        if file != "pom.xml" {
+        if file != *self.release_file {
             return false;
         }
 

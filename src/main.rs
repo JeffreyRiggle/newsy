@@ -10,7 +10,7 @@ extern crate futures;
 extern crate base64;
 extern crate regex;
 
-use hyper::rt;
+use hyper::rt::{self, Future};
 use std::env;
 pub use self::httpclient::HttpClient;
 mod httpclient;
@@ -34,5 +34,10 @@ fn main() {
         release_pattern: args[4].clone()
     };
 
-    rt::run(client.get_commits());
+    rt::run(client.get_commits_in_release().map(|change| {
+        println!("Got changes");
+    })
+    .map_err(|err| {
+        eprintln!("Error occurred.");
+    }));
 }

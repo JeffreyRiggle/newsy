@@ -16,6 +16,26 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
+    pub fn make_request_with_context<T, D>(method: &str, url: &str, context: D) -> impl Future<Item = (T, D), Error = hyper::Error>
+    where 
+        T: serde::de::DeserializeOwned,
+    {
+        let client = HttpClient::create_client();
+        
+        let req = HttpClient::build_request(method, url);
+    
+        client.request(req)
+              .and_then(|res| {
+                  println!("Got response: {}", res.status());
+                  res.into_body().concat2()
+               })
+               .and_then(move |body| {
+                   let s = String::from_utf8(body.to_vec()).unwrap();
+                   let ds = serde_json::from_str(&s).unwrap();
+                   Ok((ds, context))
+               })
+    }
+
     pub fn make_request<T>(method: &str, url: &str) -> impl Future<Item = T, Error = hyper::Error>
     where 
         T: serde::de::DeserializeOwned, 
