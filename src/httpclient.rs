@@ -26,7 +26,6 @@ impl HttpClient {
     
         client.request(req)
               .and_then(|res| {
-                  println!("Got response: {}", res.status());
                   res.into_body().concat2()
                })
                .and_then(move |body| {
@@ -46,7 +45,6 @@ impl HttpClient {
     
         client.request(req)
               .and_then(|res| {
-                  println!("Got response: {}", res.status());
                   res.into_body().concat2()
                })
                .and_then(move |body| {
