@@ -10,13 +10,19 @@ extern crate futures;
 extern crate base64;
 extern crate regex;
 
+use std::collections::HashMap;
+
 use hyper::rt::{self, Future};
 use std::env;
+
 pub use self::httpclient::HttpClient;
+pub use self::gitclient::GitClient;
+pub use self::releasegen::ReleaseGen;
+pub use self::changes::Change;
 mod httpclient;
 mod gitclient;
-pub use self::gitclient::GitClient;
-use std::collections::HashMap;
+mod releasegen;
+mod changes;
 
 fn main() {
     // TODO fix up command line options.
@@ -46,9 +52,7 @@ fn main() {
     };
 
     rt::run(client.get_issues_in_release().map(|changes| {
-        for change in changes {
-            println!("Found change {} by {} with type {}", change.message, change.author, change.change_type);
-        }
+        ReleaseGen::generate_markdown(changes);
     })
     .map_err(|_err| {
         eprintln!("Error occurred.");

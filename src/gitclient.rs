@@ -10,6 +10,7 @@ use hyper::rt::{self, Future};
 use regex::Regex;
 pub use httpclient::HttpClient;
 use std::collections::HashMap;
+use changes::Change;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Commit {
@@ -316,12 +317,6 @@ pub struct GitClient {
     pub release_pattern: String,
     pub release_labels: Vec<String>,
     pub type_map: HashMap<String, String>
-}
-
-pub struct Change {
-    pub message: String,
-    pub author: String,
-    pub change_type: String
 }
 
 impl GitClient {
