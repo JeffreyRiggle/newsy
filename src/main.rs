@@ -53,6 +53,7 @@ fn main() {
 
     rt::run(client.get_issues_in_release().map(|changes| {
         ReleaseGen::generate_markdown(changes);
+        //ReleaseGen::generate_html(changes);
     })
     .map_err(|_err| {
         eprintln!("Error occurred.");
